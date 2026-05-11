@@ -228,6 +228,47 @@
     @keyframes fadeUp { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
     @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
     @keyframes voicePulse { 0%,100%{box-shadow:0 0 0 0 rgba(226,75,74,0.4)} 50%{box-shadow:0 0 0 6px rgba(226,75,74,0)} }
+
+    /* お問い合わせフォーム */
+    .contact-form-wrapper {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 14px;
+      margin: 4px 0;
+      width: 100%;
+      max-width: 300px;
+    }
+    .contact-form-wrapper h4 {
+      font-size: 13px; font-weight: 700;
+      color: #111e35; margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #e8294a;
+    }
+    .contact-form-wrapper input,
+    .contact-form-wrapper textarea {
+      width: 100%; border: 1px solid #ddd;
+      border-radius: 6px; padding: 7px 10px;
+      font-size: 12px; font-family: 'Noto Sans JP', sans-serif;
+      color: #222; outline: none; margin-bottom: 7px;
+      box-sizing: border-box;
+    }
+    .contact-form-wrapper input:focus,
+    .contact-form-wrapper textarea:focus { border-color: #3a5298; }
+    .contact-form-wrapper textarea { height: 60px; resize: none; }
+    .contact-submit-btn {
+      width: 100%; background: #111e35;
+      color: #fff; border: none; border-radius: 6px;
+      padding: 8px; font-size: 12px; font-weight: 700;
+      font-family: 'Noto Sans JP', sans-serif;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .contact-submit-btn:hover { background: #3a5298; }
+    .contact-submit-btn:disabled { opacity: 0.5; cursor: default; }
+    .contact-success {
+      text-align: center; color: #1a7a4a;
+      font-size: 13px; font-weight: 700; padding: 10px 0;
+    }
   </style>
 </head>
 <body>
@@ -261,7 +302,7 @@
       <div class="message-avatar">CV</div>
       <div class="message-bubble">
         こんにちは！株式会社CV companyのAIアシスタントです。<br><br>
-       各種お問い合わせ・お見積り・太陽光設備・ドローン事業・各種デザイン・各種印刷・動画制作など、お気軽にご質問ください。テキストでも音声でも承ります。
+        各種お問い合わせ・お見積り・太陽光設備など、お気軽にご質問ください。テキストでも音声でも承ります。
       </div>
     </div>
   </div>
@@ -319,12 +360,11 @@ const SYSTEM_PROMPT = `あなたは株式会社CV companyのAIアシスタント
 以下のガイドラインで回答してください：
 - 丁寧で親しみやすい日本語で話す
 - 太陽光設備・お見積り・お問い合わせ・会社情報の質問に専門的に回答する
-- ドローン事業として、ドローンによる動画撮影（PRビデオ制作）と太陽光パネルのドローン点検サービスを提供している
-- 各種デザイン制作、各種印刷、動画制作サービスも提供している
 - お見積りや詳細なお問い合わせは「担当者よりご連絡いたします」と案内する
 - 公式LINEについては「公式LINEよりお気軽にご連絡ください」と案内する
 - 回答は200字以内を目安に簡潔にまとめる
-- 絵文字は使わない`;
+- 絵文字は使わない
+- ユーザーがお問い合わせ・見積り依頼を希望する場合は「下記のお問い合わせフォームをご利用ください」と案内してからshowContactForm()を呼び出すよう促す`;
 
 let isTyping = false, recognition = null, isListening = false, conversationHistory = [];
 let chatOpen = false;
@@ -362,6 +402,62 @@ function addMessage(text, isUser) {
   div.innerHTML = `<div class="message-avatar">${isUser ? 'You' : 'CV'}</div><div class="message-bubble">${text.replace(/\n/g,'<br>')}</div>`;
   chatMessages.appendChild(div); chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+function showContactForm() {
+  const div = document.createElement('div');
+  div.className = 'message bot msg-fade-in';
+  div.innerHTML = `
+    <div class="message-avatar">CV</div>
+    <div class="contact-form-wrapper">
+      <h4>お問い合わせフォーム</h4>
+      <input type="text" id="cf-company" placeholder="会社名 *" />
+      <input type="text" id="cf-name" placeholder="担当者名 *" />
+      <input type="tel" id="cf-phone" placeholder="電話番号 *" />
+      <input type="email" id="cf-email" placeholder="メールアドレス *" />
+      <textarea id="cf-message" placeholder="お問い合わせ内容 *"></textarea>
+      <button class="contact-submit-btn" onclick="submitContact(this)">送信する</button>
+    </div>
+  `;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function submitContact(btn) {
+  const companyName = document.getElementById('cf-company').value.trim();
+  const contactName = document.getElementById('cf-name').value.trim();
+  const phone = document.getElementById('cf-phone').value.trim();
+  const email = document.getElementById('cf-email').value.trim();
+  const message = document.getElementById('cf-message').value.trim();
+
+  if (!companyName || !contactName || !phone || !email || !message) {
+    alert('すべての項目を入力してください');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+
+  try {
+    const res = await fetch('/api/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyName, contactName, phone, email, message })
+    });
+    const data = await res.json();
+    if (data.success) {
+      btn.closest('.contact-form-wrapper').innerHTML = '<div class="contact-success">✅ お問い合わせを送信しました！<br>担当者よりご連絡いたします。</div>';
+      addMessage('お問い合わせありがとうございます。内容を確認の上、担当者よりご連絡いたします。', false);
+    } else {
+      alert('送信に失敗しました。もう一度お試しください。');
+      btn.disabled = false;
+      btn.textContent = '送信する';
+    }
+  } catch(e) {
+    alert('送信に失敗しました。もう一度お試しください。');
+    btn.disabled = false;
+    btn.textContent = '送信する';
+  }
+}
+
 function showTyping() {
   const div = document.createElement('div');
   div.className = 'message bot msg-fade-in'; div.id = 'typingMsg';
@@ -387,6 +483,11 @@ async function sendMessage() {
     const reply = data.content?.[0]?.text || '申し訳ありません。もう一度お試しください。';
     removeTyping(); addMessage(reply, false);
     conversationHistory.push({ role: 'assistant', content: reply });
+    // お問い合わせ・見積りキーワードが含まれる場合フォームを表示
+    const keywords = ['お問い合わせ', 'お問合せ', '問い合わせ', '見積', '見積り', 'お見積'];
+    if (keywords.some(k => reply.includes(k) || (conversationHistory[conversationHistory.length-2]?.content || '').includes(k))) {
+      if (!document.querySelector('.contact-form-wrapper')) showContactForm();
+    }
     if (isListening) speakText(reply);
   } catch(e) {
     removeTyping(); addMessage('接続エラーが発生しました。しばらくしてから再度お試しください。', false);
