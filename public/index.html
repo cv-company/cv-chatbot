@@ -521,10 +521,10 @@ async function sendMessage() {
     const reply = data.content?.[0]?.text || '申し訳ありません。もう一度お試しください。';
     removeTyping(); addMessage(reply, false);
     conversationHistory.push({ role: 'assistant', content: reply });
-    // お問い合わせ・見積りキーワードが含まれる場合フォームを表示
-    const keywords = ['お問い合わせ', 'お問合せ', '問い合わせ', '見積', '見積り', 'お見積'];
-    if (keywords.some(k => reply.includes(k) || (conversationHistory[conversationHistory.length-2]?.content || '').includes(k))) {
-      if (!document.querySelector('.contact-form-wrapper')) showContactForm();
+    // ユーザーが5回やり取りしたら、一度だけお問い合わせフォームを表示
+    const userTurns = conversationHistory.filter(m => m.role === 'user').length;
+    if (userTurns >= 5 && !document.querySelector('.contact-form-wrapper')) {
+      showContactForm();
     }
     if (isListening) speakText(reply);
   } catch(e) {
