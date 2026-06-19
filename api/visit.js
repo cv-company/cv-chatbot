@@ -4,9 +4,18 @@
 function sbReady() {
   return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
+function sbBase() {
+  let u = (process.env.SUPABASE_URL || '').trim();
+  u = u.replace(/\s+$/, '');
+  u = u.replace(/\/+$/, '');
+  u = u.replace(/\/rest\/v1$/, '');
+  return u;
+}
 function sbHeaders() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const h = { apikey: key, 'Content-Type': 'application/json' };
+  if (key.startsWith('eyJ')) h.Authorization = `Bearer ${key}`;
+  return h;
 }
 
 export default async function handler(req, res) {
@@ -25,7 +34,7 @@ export default async function handler(req, res) {
   const ua = (req.headers['user-agent'] || '').toString().slice(0, 300);
 
   try {
-    await fetch(`${process.env.SUPABASE_URL}/rest/v1/sessions?on_conflict=session_id`, {
+    await fetch(`${sbBase()}/rest/v1/sessions?on_conflict=session_id`, {
       method: 'POST',
       headers: { ...sbHeaders(), Prefer: 'return=minimal,resolution=merge-duplicates' },
       body: JSON.stringify({
