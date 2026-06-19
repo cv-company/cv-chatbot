@@ -1,22 +1,42 @@
 // api/check.js  ← 診断用の一時ファイル。ブラウザでこのURLを開くだけで、
-// Supabaseへの接続・書き込みを点検し、結果をその場に表示します。
+// Supabaseの設定（URL/キーの種類/書き込み）を点検し、結果をその場に表示します。
 // （原因が分かったら、このファイルは削除して構いません）
+
+function sbHeaders(key) {
+  const h = { apikey: key, 'Content-Type': 'application/json' };
+  if (key.startsWith('eyJ')) h.Authorization = `Bearer ${key}`; // 旧式JWTのときのみ
+  return h;
+}
 
 export default async function handler(req, res) {
   const out = { steps: [] };
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const rawUrl = process.env.SUPABASE_URL || '';
+  const url = rawUrl.trim().replace(/\s+$/, '').replace(/\/+$/, '').replace(/\/rest\/v1$/, '');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  out.urlHadTrailingSlashOrSpace = (rawUrl !== url);
 
   out.hasSupabaseUrl = !!url;
   out.hasServiceRoleKey = !!key;
-  out.urlLooksValid = !!(url && url.startsWith('https://') && url.includes('.supabase.co'));
+  out.urlStartsWithHttps = url.startsWith('https://');
+  out.urlLooksValid = !!(url.startsWith('https://') && url.includes('.supabase.co'));
 
-  if (!url || !key) {
-    out.result = 'NG: 環境変数が見つかりません（Vercelの SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY を確認してください）';
+  // キーの種類を判定（値そのものは表示しない）
+  if (key.startsWith('sb_secret_')) out.keyType = 'secret（正しい：サーバー用）';
+  else if (key.startsWith('sb_publishable_')) out.keyType = 'publishable（NG：これは公開用キーです。secretキーに変えてください）';
+  else if (key.startsWith('eyJ')) out.keyType = 'legacy service_role（JWT・使用可）';
+  else if (key.startsWith('https://')) out.keyType = 'URLが入っています（NG：キーを入れてください）';
+  else out.keyType = '不明';
+
+  if (!out.urlLooksValid) {
+    out.result = 'NG: SUPABASE_URL が正しくありません。https://〇〇.supabase.co の形にしてください（sb_... ではありません）';
+    return res.status(200).json(out);
+  }
+  if (!key || out.keyType.includes('NG') || out.keyType === '不明') {
+    out.result = 'NG: SUPABASE_SERVICE_ROLE_KEY が正しくありません（secretキー = sb_secret_... を入れてください）';
     return res.status(200).json(out);
   }
 
-  const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const headers = sbHeaders(key);
   const testId = 'diag_' + Date.now();
 
   // 1) 書き込みテスト
