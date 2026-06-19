@@ -55,17 +55,28 @@ async function checkLimits(req) {
 function sbReady() {
   return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
+function sbBase() {
+  let u = (process.env.SUPABASE_URL || '').trim();
+  u = u.replace(/\s+$/, '');        // 末尾の空白・改行を除去
+  u = u.replace(/\/+$/, '');        // 末尾のスラッシュを除去
+  u = u.replace(/\/rest\/v1$/, ''); // 誤って /rest/v1 まで含めた場合を除去
+  return u;
+}
 function sbHeaders() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const h = { apikey: key, 'Content-Type': 'application/json' };
+  // 旧式(JWT: eyJ...)のときだけ Authorization を付ける。
+  // 新式(sb_secret_...)は apikey だけで認証されるため Authorization は付けない。
+  if (key.startsWith('eyJ')) h.Authorization = `Bearer ${key}`;
+  return h;
 }
 async function sbGet(path) {
-  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${path}`, { headers: sbHeaders() });
+  const r = await fetch(`${sbBase()}/rest/v1/${path}`, { headers: sbHeaders() });
   if (!r.ok) throw new Error('sb get ' + r.status);
   return r.json();
 }
 async function sbPost(path, body, extraHeaders) {
-  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${path}`, {
+  const r = await fetch(`${sbBase()}/rest/v1/${path}`, {
     method: 'POST',
     headers: { ...sbHeaders(), Prefer: 'return=minimal', ...(extraHeaders || {}) },
     body: JSON.stringify(body),
