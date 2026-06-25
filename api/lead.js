@@ -4,6 +4,9 @@
 function sbReady() {
   return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
+
+// このボットを識別するID
+const BOT_ID = 'cv';
 function sbBase() {
   let u = (process.env.SUPABASE_URL || '').trim();
   u = u.replace(/\s+$/, '');
@@ -32,7 +35,7 @@ export default async function handler(req, res) {
     await fetch(`${sbBase()}/rest/v1/leads`, {
       method: 'POST',
       headers: { ...sbHeaders(), Prefer: 'return=minimal' },
-      body: JSON.stringify({ session_id: visitorId || null, note: note || null }),
+      body: JSON.stringify({ session_id: visitorId || null, bot_id: BOT_ID, note: note || null }),
     });
   } catch (e) { /* 失敗は無視 */ }
 
