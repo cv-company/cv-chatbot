@@ -4,6 +4,9 @@
 function sbReady() {
   return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
+
+// このボットを識別するID
+const BOT_ID = 'cv';
 function sbBase() {
   let u = (process.env.SUPABASE_URL || '').trim();
   u = u.replace(/\s+$/, '');
@@ -39,6 +42,7 @@ export default async function handler(req, res) {
       headers: { ...sbHeaders(), Prefer: 'return=minimal,resolution=merge-duplicates' },
       body: JSON.stringify({
         session_id: visitorId,
+        bot_id: BOT_ID,
         last_seen: new Date().toISOString(),
         ip: ip,
         user_agent: ua,
