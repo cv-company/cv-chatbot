@@ -113,6 +113,9 @@
   <div class="topbar">
     <div class="logo">CV</div>
     <h1>チャットボット管理画面</h1>
+    <select id="botSelect" onchange="changeBot()" style="padding:7px 10px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;background:#fff;color:var(--navy);font-weight:700">
+      <option value="all">全体（すべて）</option>
+    </select>
     <button class="logout" onclick="logout()">ログアウト</button>
   </div>
 
@@ -138,9 +141,9 @@
         <span id="goalText" style="font-weight:700">– / –</span>
         <span id="goalPct" style="color:var(--muted)"></span>
         <span style="flex:1"></span>
-        <span style="font-size:12px;color:var(--muted)">目標を変更：</span>
+        <span id="goalEditHint" style="font-size:12px;color:var(--muted)">目標を変更：</span>
         <input type="number" id="goalInput" min="0" />
-        <button class="btn-sm" onclick="saveGoal()">保存</button>
+        <button class="btn-sm" id="goalSaveBtn" onclick="saveGoal()">保存</button>
       </div>
     </div>
     <button class="btn-sm ghost" onclick="loadStats()">最新に更新</button>
@@ -204,6 +207,7 @@
 
 <script>
 let PW = '';
+let CURRENT_BOT = 'all';
 let logsOffset = 0;
 let logsHasNext = false;
 let kbData = [];
@@ -213,7 +217,7 @@ async function api(action, extra){
   const res = await fetch('/api/admin', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(Object.assign({ password: PW, action }, extra || {}))
+    body: JSON.stringify(Object.assign({ password: PW, action, bot: CURRENT_BOT }, extra || {}))
   });
   if(res.status === 401){ throw new Error('unauthorized'); }
   const data = await res.json();
@@ -250,10 +254,26 @@ async function doLogin(){
   }
 }
 function logout(){ PW=''; sessionStorage.removeItem('cv_admin_pw'); location.reload(); }
-function showApp(){
+async function showApp(){
   document.getElementById('loginWrap').style.display='none';
   document.getElementById('app').style.display='block';
+  await loadBots();
   loadStats(); loadLogs(); loadBlocklist(); loadKb();
+}
+async function loadBots(){
+  try{
+    const d = await api('bots');
+    const sel = document.getElementById('botSelect');
+    const opts = ['<option value="all">全体（すべて）</option>']
+      .concat((d.bots||[]).map(b=>`<option value="${esc(b.bot_id)}">${esc(b.name)}</option>`));
+    sel.innerHTML = opts.join('');
+    sel.value = CURRENT_BOT;
+  }catch(e){ /* 一覧取得失敗時は全体のみ */ }
+}
+function changeBot(){
+  CURRENT_BOT = document.getElementById('botSelect').value;
+  logsOffset = 0;
+  loadStats(); loadLogs(); loadBlocklist();
 }
 
 /* ---- タブ ---- */
@@ -275,8 +295,12 @@ async function loadStats(){
     const pct = target>0 ? Math.min(100, Math.round(d.leadsMonth/target*100)) : 0;
     document.getElementById('goalBar').style.width = pct+'%';
     document.getElementById('goalText').textContent = `${d.leadsMonth} / ${target} 件`;
-    document.getElementById('goalPct').textContent = target>0 ? `（${pct}%）` : '（目標未設定）';
+    const isAll = (CURRENT_BOT === 'all');
+    document.getElementById('goalPct').textContent = target>0 ? `（${pct}%${isAll?' / 全ボット合計':''}）` : '（目標未設定）';
     document.getElementById('goalInput').value = target;
+    document.getElementById('goalInput').disabled = isAll;
+    document.getElementById('goalSaveBtn').disabled = isAll;
+    document.getElementById('goalEditHint').textContent = isAll ? '※ 目標の変更はボットを選択してください' : '目標を変更：';
   }catch(e){ toast('読み込み失敗：'+e.message); }
 }
 async function saveGoal(){
@@ -301,7 +325,7 @@ async function loadLogs(){
           : `<button class="btn-sm danger" onclick="toggleBlock('${r.session_id}',true)">ブロック</button>`;
         const view = r.msgCount>0 ? `<button class="btn-sm" onclick="viewThread('${r.session_id}')">会話を見る</button>` : '';
         return `<tr>
-          <td>${fmt(r.last_seen)}</td>
+          <td>${fmt(r.last_seen)}<br><span class="mono" style="color:var(--blue)">${esc(r.bot_id||'')}</span></td>
           <td class="mono">${esc(r.ip||'–')}</td>
           <td>${r.msgCount}</td>
           <td>${st}</td>
@@ -343,23 +367,24 @@ async function loadBlocklist(){
     const d = await api('blocklist');
     const s = d.sessions||[], ips = d.ips||[];
     document.getElementById('blkSessions').innerHTML = s.length
-      ? s.map(r=>`<tr><td class="mono">${esc(shortId(r.session_id))}</td><td class="mono">${esc(r.ip||'–')}</td><td>${fmt(r.last_seen)}</td>
+      ? s.map(r=>`<tr><td class="mono">${esc(shortId(r.session_id))}<br><span style="color:var(--blue)">${esc(r.bot_id||'')}</span></td><td class="mono">${esc(r.ip||'–')}</td><td>${fmt(r.last_seen)}</td>
           <td style="text-align:right"><button class="btn-sm ghost" onclick="toggleBlock('${r.session_id}',false)">解除</button></td></tr>`).join('')
       : '<tr><td colspan="4" class="empty">ブロック中のセッションはありません</td></tr>';
     document.getElementById('blkIps').innerHTML = ips.length
-      ? ips.map(r=>`<tr><td class="mono">${esc(r.ip)}</td><td>${esc(r.reason||'–')}</td>
-          <td style="text-align:right"><button class="btn-sm ghost" onclick="unblockIp('${esc(r.ip)}')">解除</button></td></tr>`).join('')
+      ? ips.map(r=>`<tr><td class="mono">${esc(r.ip)}<br><span style="color:var(--blue)">${esc(r.bot_id||'')}</span></td><td>${esc(r.reason||'–')}</td>
+          <td style="text-align:right"><button class="btn-sm ghost" onclick="unblockIp('${esc(r.ip)}','${esc(r.bot_id||'')}')">解除</button></td></tr>`).join('')
       : '<tr><td colspan="3" class="empty">ブロック中のIPはありません</td></tr>';
   }catch(e){ toast('読み込み失敗：'+e.message); }
 }
 async function blockIp(){
   const ip = document.getElementById('ipInput').value.trim();
   if(!ip){ toast('IPを入力してください'); return; }
+  if(CURRENT_BOT==='all'){ toast('上のメニューで対象ボットを選んでください'); return; }
   try{ await api('block',{ip}); document.getElementById('ipInput').value=''; toast('ブロックしました'); loadBlocklist(); }
   catch(e){ toast('失敗：'+e.message); }
 }
-async function unblockIp(ip){
-  try{ await api('unblock',{ip}); toast('解除しました'); loadBlocklist(); }
+async function unblockIp(ip, botId){
+  try{ await api('unblock',{ip, ipBot: botId}); toast('解除しました'); loadBlocklist(); }
   catch(e){ toast('失敗：'+e.message); }
 }
 
