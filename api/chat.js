@@ -8,6 +8,9 @@ const FAQ_TEXT = "■ 会社・事業全般\nQ: CV companyはどんな会社で�
 const DAILY_IP_LIMIT = 10;   // 同一IPからの1日の上限
 const MONTHLY_LIMIT  = 300;  // サイト全体の1か月の上限
 
+// このボットを識別するID（管理画面でボット別に集計するために使用）
+const BOT_ID = 'cv';
+
 // ============================================================
 // Upstash（回数制限：自動制限）— 既存のまま
 // ============================================================
@@ -99,7 +102,7 @@ async function isBlocked(visitorId, ip) {
       if (Array.isArray(s) && s[0] && s[0].blocked === true) return true;
     }
     if (ip && ip !== 'unknown') {
-      const b = await sbGet(`blocked_ips?ip=eq.${encodeURIComponent(ip)}&select=ip`);
+      const b = await sbGet(`blocked_ips?bot_id=eq.${BOT_ID}&ip=eq.${encodeURIComponent(ip)}&select=ip`);
       if (Array.isArray(b) && b.length > 0) return true;
     }
   } catch (e) { /* 失敗時はブロックしない */ }
@@ -113,12 +116,12 @@ async function logConversation(visitorId, ip, ua, userText, botText) {
     // セッションを更新（初回はfirst_seen=now / blockedは触らない）
     await sbPost(
       'sessions?on_conflict=session_id',
-      { session_id: visitorId, last_seen: new Date().toISOString(), ip: ip, user_agent: ua },
+      { session_id: visitorId, bot_id: BOT_ID, last_seen: new Date().toISOString(), ip: ip, user_agent: ua },
       { Prefer: 'resolution=merge-duplicates' }
     );
     const rows = [];
-    if (userText) rows.push({ session_id: visitorId, role: 'user', content: userText });
-    if (botText)  rows.push({ session_id: visitorId, role: 'assistant', content: botText });
+    if (userText) rows.push({ session_id: visitorId, bot_id: BOT_ID, role: 'user', content: userText });
+    if (botText)  rows.push({ session_id: visitorId, bot_id: BOT_ID, role: 'assistant', content: botText });
     if (rows.length) await sbPost('messages', rows);
   } catch (e) { /* 記録失敗は無視 */ }
 }
