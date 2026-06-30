@@ -346,8 +346,8 @@
   </div>
 
   <div class="quick-chips" id="quickChips">
-    <button class="chip" onclick="sendChip('各種お問い合わせをしたい')">各種お問合せ</button>
-    <button class="chip" onclick="sendChip('お見積りを依頼したい')">お見積り依頼</button>
+    <button class="chip" onclick="openContactForm()">各種お問合せ</button>
+    <button class="chip" onclick="openContactForm()">お見積り依頼</button>
     <button class="chip" onclick="sendChip('太陽光設備について教えてください')">太陽光設備について</button>
     <button class="chip" onclick="sendChip('公式LINEを教えてください')">公式LINE</button>
     <button class="chip" onclick="sendChip('会社概要を教えてください')">会社概要</button>
@@ -393,47 +393,18 @@
 </div>
 
 <script>
-const SYSTEM_PROMPT = `あなたは株式会社CV companyのAIアシスタントです。CV companyは「持続可能な未来をデザインするパートナー」をミッションに掲げ、太陽光発電設備の販売・施工、サステナビリティコンサルティング、環境ソリューションを提供する会社です。
+const SYSTEM_PROMPT = `あなたは株式会社CV companyのAIアシスタントです。デザイン・印刷・看板・動画制作、電気設備・太陽光発電、ドローンなど当社の業務を熟知した30代の女性スタッフとして対応します。
 
 以下のガイドラインで回答してください：
-- 丁寧で親しみやすい日本語で話す
-- 太陽光設備・お見積り・お問い合わせ・会社情報の質問に専門的に回答する
+- お客様一人ひとりの立場に立ち、誠実・親切・ていねいに、寄り添う気持ちで回答する
+- 専門的な内容も、分かりやすく安心感のある言葉でお伝えする
 - お見積りや詳細なお問い合わせは「担当者よりご連絡いたします」と案内する
 - 公式LINEについては「公式LINEよりお気軽にご連絡ください」と案内する
-- 回答は200字以内を目安に簡潔にまとめる
-- 絵文字は使わない
-- ユーザーがお問い合わせ・見積り依頼を希望する場合は「下記のお問い合わせフォームをご利用ください」と案内してからshowContactForm()を呼び出すよう促す`;
+- 回答は必ず300字以内にまとめる
+- 絵文字は使わない`;
 
 let isTyping = false, recognition = null, isListening = false, conversationHistory = [];
 let chatOpen = false;
-
-/* === 訪問者ID & 来訪サイン（管理画面の集計用に追加） === */
-function getVisitorId() {
-  try {
-    let id = localStorage.getItem('cv_visitor_id');
-    if (!id) {
-      id = 'v_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
-      localStorage.setItem('cv_visitor_id', id);
-    }
-    return id;
-  } catch (e) { return 'v_anon'; }
-}
-const VISITOR_ID = getVisitorId();
-
-function pingVisit() {
-  try {
-    const last = Number(localStorage.getItem('cv_last_ping') || 0);
-    if (Date.now() - last < 5 * 60 * 1000) return; // 5分以内は重複送信しない
-    localStorage.setItem('cv_last_ping', String(Date.now()));
-  } catch (e) {}
-  fetch('/api/visit', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ visitorId: VISITOR_ID })
-  }).catch(() => {});
-}
-pingVisit();
-/* === 追加ここまで === */
 
 const chatInput = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
@@ -487,6 +458,13 @@ function showContactForm() {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
+// お問い合わせ／見積りボタン用：チャットを開いてフォームを一度だけ表示
+function openContactForm() {
+  if (!chatOpen) toggleChat();
+  if (!document.querySelector('.contact-form-wrapper')) showContactForm();
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 async function submitContact(btn) {
   const companyName = document.getElementById('cf-company').value.trim();
   const contactName = document.getElementById('cf-name').value.trim();
@@ -512,12 +490,6 @@ async function submitContact(btn) {
     if (data.success) {
       btn.closest('.contact-form-wrapper').innerHTML = '<div class="contact-success">✅ お問い合わせを送信しました！<br>担当者よりご連絡いたします。</div>';
       addMessage('お問い合わせありがとうございます。内容を確認の上、担当者よりご連絡いたします。', false);
-      // お問い合わせ獲得を記録（目標の集計用に追加）
-      fetch('/api/lead', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitorId: VISITOR_ID, note: companyName })
-      }).catch(() => {});
     } else {
       alert('送信に失敗しました。もう一度お試しください。');
       btn.disabled = false;
@@ -549,7 +521,7 @@ async function sendMessage() {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ system: SYSTEM_PROMPT, messages: conversationHistory, visitorId: VISITOR_ID })
+      body: JSON.stringify({ system: SYSTEM_PROMPT, messages: conversationHistory })
     });
     const data = await res.json();
     const reply = data.content?.[0]?.text || '申し訳ありません。もう一度お試しください。';
