@@ -39,6 +39,15 @@ async function sbReq(method, path, body) {
   if (!r.ok) throw new Error('sb ' + method + ' ' + r.status + ' ' + (await r.text()).slice(0, 200));
   return true;
 }
+async function sbRpc(fn, args) {
+  const r = await fetch(`${sbBase()}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: sbHeaders(),
+    body: JSON.stringify(args || {}),
+  });
+  if (!r.ok) throw new Error('rpc ' + r.status + ' ' + (await r.text()).slice(0, 200));
+  return r.json();
+}
 
 function jst() {
   const j = new Date(Date.now() + 9 * 3600 * 1000);
@@ -69,6 +78,13 @@ export default async function handler(req, res) {
     if (action === 'bots') {
       const list = await sbGet('bots?select=bot_id,name&order=created_at.asc');
       return res.status(200).json({ bots: list });
+    }
+
+    // ---- 月別集計 ----
+    if (action === 'monthly') {
+      const p_bot = bot && bot !== 'all' ? bot : null;
+      const rows = await sbRpc('monthly_stats', { p_bot });
+      return res.status(200).json({ months: rows });
     }
 
     // ---- ダッシュボードの数値 ----
