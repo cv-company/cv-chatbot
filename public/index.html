@@ -410,6 +410,34 @@ const SYSTEM_PROMPT = `あなたは株式会社CV companyのAIアシスタント
 let isTyping = false, recognition = null, isListening = false, conversationHistory = [];
 let chatOpen = false;
 
+/* === 訪問者ID & 来訪サイン（管理画面の集計用に追加） === */
+function getVisitorId() {
+  try {
+    let id = localStorage.getItem('cv_visitor_id');
+    if (!id) {
+      id = 'v_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('cv_visitor_id', id);
+    }
+    return id;
+  } catch (e) { return 'v_anon'; }
+}
+const VISITOR_ID = getVisitorId();
+
+function pingVisit() {
+  try {
+    const last = Number(localStorage.getItem('cv_last_ping') || 0);
+    if (Date.now() - last < 5 * 60 * 1000) return; // 5分以内は重複送信しない
+    localStorage.setItem('cv_last_ping', String(Date.now()));
+  } catch (e) {}
+  fetch('/api/visit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ visitorId: VISITOR_ID })
+  }).catch(() => {});
+}
+pingVisit();
+/* === 追加ここまで === */
+
 const chatInput = document.getElementById('chatInput');
 const sendBtn = document.getElementById('sendBtn');
 const chatMessages = document.getElementById('chatMessages');
@@ -494,6 +522,12 @@ async function submitContact(btn) {
     if (data.success) {
       btn.closest('.contact-form-wrapper').innerHTML = '<div class="contact-success">✅ お問い合わせを送信しました！<br>担当者よりご連絡いたします。</div>';
       addMessage('お問い合わせありがとうございます。内容を確認の上、担当者よりご連絡いたします。', false);
+      // お問い合わせ獲得を記録（目標の集計用に追加）
+      fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitorId: VISITOR_ID, note: companyName })
+      }).catch(() => {});
     } else {
       alert('送信に失敗しました。もう一度お試しください。');
       btn.disabled = false;
@@ -525,7 +559,7 @@ async function sendMessage() {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ system: SYSTEM_PROMPT, messages: conversationHistory })
+      body: JSON.stringify({ system: SYSTEM_PROMPT, messages: conversationHistory, visitorId: VISITOR_ID })
     });
     const data = await res.json();
     const reply = data.content?.[0]?.text || '申し訳ありません。もう一度お試しください。';
