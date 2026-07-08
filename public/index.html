@@ -432,7 +432,7 @@ function pingVisit() {
   fetch('/api/visit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ visitorId: VISITOR_ID })
+    body: JSON.stringify({ messages: conversationHistory, visitorId: VISITOR_ID })
   }).catch(() => {});
 }
 pingVisit();
