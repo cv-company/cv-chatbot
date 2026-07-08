@@ -136,8 +136,31 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { messages, system, visitorId } = req.body;
-  if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: 'Invalid request body' });
+  const { messages: rawMessages, visitorId } = req.body || {};
+  // ★ セキュリティ修正：クライアントから届いた system は一切使わない（下で固定値に上書きします）
+
+  // ★ セキュリティ修正：messages を検証してから使う
+  //   ・配列であること／件数は直近20件まで
+  //   ・role は 'user' か 'assistant' のみ
+  //   ・content は文字列で、1件あたり2000文字まで
+  //   ・最後の要素は必ず role:'user'（＝今回ユーザーが送った発言）であること
+  if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
+    return res.status(400).json({ error: 'Invalid request body' });
+  }
+  const trimmed = rawMessages.slice(-20);
+  const messages = [];
+  for (const m of trimmed) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) {
+      return res.status(400).json({ error: 'Invalid message role' });
+    }
+    if (typeof m.content !== 'string' || m.content.length === 0) {
+      return res.status(400).json({ error: 'Invalid message content' });
+    }
+    messages.push({ role: m.role, content: m.content.slice(0, 2000) });
+  }
+  if (messages[messages.length - 1].role !== 'user') {
+    return res.status(400).json({ error: 'Last message must be from user' });
+  }
 
   const ip = clientIp(req);
   const ua = (req.headers['user-agent'] || '').toString().slice(0, 300);
@@ -166,7 +189,18 @@ export default async function handler(req, res) {
     '5. 丁寧で簡潔な日本語（1〜3文程度）で回答してください。\n\n' +
     '# ナレッジ（参考FAQ）\n' + FAQ_TEXT;
 
-  const finalSystem = (system || '') + knowledgeRules;
+  // ★ セキュリティ修正：ペルソナ設定はサーバー側に固定（クライアントからは一切受け付けない）
+  const PERSONA_PROMPT =
+    'あなたは株式会社CV companyのAIアシスタントです。デザイン・印刷・看板・動画制作、電気設備・太陽光発電、ドローンなど当社の業務を熟知した30代の女性スタッフとして対応します。\n\n' +
+    '以下のガイドラインで回答してください：\n' +
+    '- お客様一人ひとりの立場に立ち、誠実・親切・ていねいに、寄り添う気持ちで回答する\n' +
+    '- 専門的な内容も、分かりやすく安心感のある言葉でお伝えする\n' +
+    '- お見積りや詳細なお問い合わせは「担当者よりご連絡いたします」と案内する\n' +
+    '- 公式LINEについては「公式LINEよりお気軽にご連絡ください」と案内する\n' +
+    '- 回答は必ず300字以内にまとめる\n' +
+    '- 絵文字は使わない';
+
+  const finalSystem = PERSONA_PROMPT + knowledgeRules;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
