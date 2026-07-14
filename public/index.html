@@ -294,11 +294,18 @@
     .contact-form-wrapper input:focus,
     .contact-form-wrapper textarea:focus { border-color: #3a5298; }
     .contact-form-wrapper textarea { height: 60px; resize: none; }
+    .contact-link-text {
+      font-size: 12px; line-height: 1.6; color: #444;
+      margin-bottom: 10px;
+    }
     .contact-submit-btn {
+      display: block;
       width: 100%; background: #111e35;
-      color: #fff; border: none; border-radius: 6px;
-      padding: 8px; font-size: 12px; font-weight: 700;
+      color: #fff !important; border: none; border-radius: 6px;
+      padding: 9px; font-size: 12px; font-weight: 700;
       font-family: 'Noto Sans JP', sans-serif;
+      text-align: center; text-decoration: none;
+      box-sizing: border-box;
       cursor: pointer; transition: background 0.15s;
     }
     .contact-submit-btn:hover { background: #3a5298; }
@@ -477,67 +484,29 @@ function showContactForm() {
   div.innerHTML = `
     <div class="message-avatar">CV</div>
     <div class="contact-form-wrapper">
-      <h4>お問い合わせフォーム</h4>
-      <input type="text" id="cf-company" placeholder="会社名 *" />
-      <input type="text" id="cf-name" placeholder="担当者名 *" />
-      <input type="tel" id="cf-phone" placeholder="電話番号 *" />
-      <input type="email" id="cf-email" placeholder="メールアドレス *" />
-      <textarea id="cf-message" placeholder="お問い合わせ内容 *"></textarea>
-      <button class="contact-submit-btn" onclick="submitContact(this)">送信する</button>
+      <h4>お問い合わせ・お見積り</h4>
+      <p class="contact-link-text">詳しいお問い合わせ・お見積りは、公式サイトのお問い合わせフォームよりご連絡ください。</p>
+      <a class="contact-submit-btn" href="https://www.cv-company.com/2" target="_blank" rel="noopener noreferrer" onclick="trackContactClick()">お問い合わせフォームを開く</a>
     </div>
   `;
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-// お問い合わせ／見積りボタン用：チャットを開いてフォームを一度だけ表示
+// お問い合わせ／見積りボタン用：チャットを開いてリンクカードを一度だけ表示
 function openContactForm() {
   if (!chatOpen) toggleChat();
   if (!document.querySelector('.contact-form-wrapper')) showContactForm();
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-async function submitContact(btn) {
-  const companyName = document.getElementById('cf-company').value.trim();
-  const contactName = document.getElementById('cf-name').value.trim();
-  const phone = document.getElementById('cf-phone').value.trim();
-  const email = document.getElementById('cf-email').value.trim();
-  const message = document.getElementById('cf-message').value.trim();
-
-  if (!companyName || !contactName || !phone || !email || !message) {
-    alert('すべての項目を入力してください');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = '送信中...';
-
-  try {
-    const res = await fetch('/api/contact', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ companyName, contactName, phone, email, message })
-    });
-    const data = await res.json();
-    if (data.success) {
-      btn.closest('.contact-form-wrapper').innerHTML = '<div class="contact-success">✅ お問い合わせを送信しました！<br>担当者よりご連絡いたします。</div>';
-      addMessage('お問い合わせありがとうございます。内容を確認の上、担当者よりご連絡いたします。', false);
-      // お問い合わせ獲得を記録（目標の集計用に追加）
-      fetch('/api/lead', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitorId: VISITOR_ID, note: companyName })
-      }).catch(() => {});
-    } else {
-      alert('送信に失敗しました。もう一度お試しください。');
-      btn.disabled = false;
-      btn.textContent = '送信する';
-    }
-  } catch(e) {
-    alert('送信に失敗しました。もう一度お試しください。');
-    btn.disabled = false;
-    btn.textContent = '送信する';
-  }
+// お問い合わせフォーム（外部サイト）への遷移を記録（目標の集計用）
+function trackContactClick() {
+  fetch('/api/lead', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ visitorId: VISITOR_ID, note: '外部お問い合わせフォームへ遷移' })
+  }).catch(() => {});
 }
 
 function showTyping() {
