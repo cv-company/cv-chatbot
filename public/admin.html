@@ -271,20 +271,31 @@ async function showApp(){
   await loadBots();
   loadStats(); loadMonthly(); loadLogs(); loadBlocklist(); loadKb();
 }
+
+/* ---- ボット一覧（制限付きログイン対応） ---- */
 async function loadBots(){
   try{
     const d = await api('bots');
     const sel = document.getElementById('botSelect');
-    const opts = ['<option value="all">全体（すべて）</option>']
-      .concat((d.bots||[]).map(b=>`<option value="${esc(b.bot_id)}">${esc(b.name)}</option>`));
-    sel.innerHTML = opts.join('');
-    sel.value = CURRENT_BOT;
+    if(d.restrictedBot){
+      // 制限付きログイン：自分のボットだけを固定表示し、選べないようにする
+      CURRENT_BOT = d.restrictedBot;
+      const name = (d.bots && d.bots[0] && d.bots[0].name) || d.restrictedBot;
+      sel.innerHTML = `<option value="${esc(d.restrictedBot)}">${esc(name)}</option>`;
+      sel.disabled = true;
+    } else {
+      const opts = ['<option value="all">全体（すべて）</option>']
+        .concat((d.bots||[]).map(b=>`<option value="${esc(b.bot_id)}">${esc(b.name)}</option>`));
+      sel.innerHTML = opts.join('');
+      sel.value = CURRENT_BOT;
+      sel.disabled = false;
+    }
   }catch(e){ /* 一覧取得失敗時は全体のみ */ }
 }
 function changeBot(){
   CURRENT_BOT = document.getElementById('botSelect').value;
   logsOffset = 0;
-  loadStats(); loadMonthly(); loadLogs(); loadBlocklist();
+  loadStats(); loadMonthly(); loadLogs(); loadBlocklist(); loadKb();
 }
 async function loadMonthly(){
   document.getElementById('monthlyBody').innerHTML='<tr><td colspan="4" class="empty">読み込み中...</td></tr>';
@@ -409,12 +420,32 @@ async function unblockIp(ip, botId){
   catch(e){ toast('失敗：'+e.message); }
 }
 
-/* ---- ナレッジ ---- */
+/* ---- ナレッジ（ボットごとに別ファイルを読み込む） ---- */
+const KB_FILES = {
+  cv: '/faq.json',
+  daishin: '/faq-daishin.json',
+  aidebot: '/faq-aidebot.json',
+  'chubu-tsushin': '/faq-chubu-tsushin.json',
+  kanou: '/faq-kanou.json'
+};
 async function loadKb(){
+  document.getElementById('kbBody').innerHTML = '<div class="empty">読み込み中...</div>';
+  document.getElementById('kbNote').textContent = '';
+  const file = KB_FILES[CURRENT_BOT];
+  if(!file){
+    kbData = [];
+    document.getElementById('kbBody').innerHTML = '<div class="empty">上のメニューでボットを選択してください（「全体」ではナレッジは表示されません）</div>';
+    return;
+  }
   try{
-    const res = await fetch('/faq.json'); kbData = await res.json();
+    const res = await fetch(file + '?_=' + Date.now());
+    if(!res.ok) throw new Error('not found');
+    kbData = await res.json();
     renderKb();
-  }catch(e){ document.getElementById('kbBody').innerHTML='<div class="empty">FAQの読み込みに失敗しました</div>'; }
+  }catch(e){
+    kbData = [];
+    document.getElementById('kbBody').innerHTML='<div class="empty">このボットのナレッジはまだ登録されていません</div>';
+  }
 }
 function renderKb(){
   const kw = (document.getElementById('kbSearch').value||'').trim().toLowerCase();
