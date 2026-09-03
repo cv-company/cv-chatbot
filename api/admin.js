@@ -1,6 +1,15 @@
-// api/admin.js  ← 管理画面API（複数ボット対応版・パスワード保護）
+// api/admin.js  ← 管理画面API（複数ボット対応版・パスワード保護・ボット限定ログイン対応）
 // すべて POST。body の { password, action, bot, ... } で動作。
 // bot を省略 or 'all' の場合は全ボット合算。
+//
+// ── ボット限定ログインについて ──
+// 環境変数 ADMIN_PASSWORD のパスワードでログインすると、従来どおり全ボットを
+// 閲覧・操作できます。
+// 環境変数 BOT_ADMIN_PASSWORDS に {"bot_id":"パスワード"} の形式(JSON文字列)で
+// 登録したパスワードでログインすると、そのbot_idのデータしか見えない・
+// 操作できない「制限付きログイン」になります（他のボットのbotパラメータを
+// 送っても、サーバー側で強制的に上書きするため、意図的な改ざんもできません）。
+// 例: BOT_ADMIN_PASSWORDS = {"chubu-tsushin":"中部学院に渡すパスワード"}
 
 function sbReady() {
   return !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -61,23 +70,50 @@ function botClause(bot) {
   return bot && bot !== 'all' ? `bot_id=eq.${encodeURIComponent(bot)}&` : '';
 }
 
+// 入力されたパスワードから「制限対象のbot_id」を判定する。
+// 一致するものが無ければ null（＝制限なしパスワードかどうかは呼び出し側で判定）。
+function getRestrictedBotId(password) {
+  try {
+    const map = JSON.parse(process.env.BOT_ADMIN_PASSWORDS || '{}');
+    for (const botId of Object.keys(map)) {
+      if (map[botId] && password === map[botId]) return botId;
+    }
+  } catch (e) {
+    // BOT_ADMIN_PASSWORDS の記述が壊れている場合は無視（制限付きログインを使わないだけ）
+  }
+  return null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { password, action } = req.body || {};
-  if (!process.env.ADMIN_PASSWORD || password !== process.env.ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'unauthorized' });
+
+  // ── 認証：まず全体パスワードと一致するか確認。ダメなら制限付きパスワードを確認 ──
+  let restrictedBot = null;
+  const isFullAdmin = !!(process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD);
+  if (!isFullAdmin) {
+    restrictedBot = getRestrictedBotId(password);
+    if (!restrictedBot) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
   }
   if (!sbReady()) return res.status(500).json({ error: 'supabase not configured' });
 
-  const bot = (req.body.bot || 'all').toString();
+  // 制限付きログインの場合、クライアントが送ってきた bot の値は無視して強制的に上書きする
+  let bot = (req.body.bot || 'all').toString();
+  if (restrictedBot) bot = restrictedBot;
   const bc = botClause(bot);
 
   try {
     // ---- ボット一覧 ----
     if (action === 'bots') {
+      if (restrictedBot) {
+        const list = await sbGet(`bots?bot_id=eq.${encodeURIComponent(restrictedBot)}&select=bot_id,name`);
+        return res.status(200).json({ bots: list, restrictedBot });
+      }
       const list = await sbGet('bots?select=bot_id,name&order=created_at.asc');
-      return res.status(200).json({ bots: list });
+      return res.status(200).json({ bots: list, restrictedBot: null });
     }
 
     // ---- 月別集計 ----
@@ -135,6 +171,11 @@ export default async function handler(req, res) {
     if (action === 'thread') {
       const sid = (req.body.sessionId || '').toString();
       if (!sid) return res.status(400).json({ error: 'sessionId required' });
+      // 制限付きログインの場合、そのセッションが本当に自分のbot_idのものか確認する
+      if (restrictedBot) {
+        const chk = await sbGet(`sessions?session_id=eq.${encodeURIComponent(sid)}&select=bot_id`);
+        if (!chk[0] || chk[0].bot_id !== restrictedBot) return res.status(403).json({ error: 'forbidden' });
+      }
       const msgs = await sbGet(
         `messages?session_id=eq.${encodeURIComponent(sid)}&select=role,content,created_at&order=created_at.asc&limit=500`
       );
@@ -161,7 +202,8 @@ export default async function handler(req, res) {
     if (action === 'unblock') {
       const sid = (req.body.sessionId || '').toString();
       const ip = (req.body.ip || '').toString();
-      const ipBot = (req.body.ipBot || (bot && bot !== 'all' ? bot : 'cv')).toString();
+      let ipBot = (req.body.ipBot || (bot && bot !== 'all' ? bot : 'cv')).toString();
+      if (restrictedBot) ipBot = restrictedBot; // 制限付きログインは自分のbot_id以外を解除できない
       if (sid) await sbReq('PATCH', `sessions?session_id=eq.${encodeURIComponent(sid)}`, { blocked: false });
       if (ip) await sbReq('DELETE', `blocked_ips?bot_id=eq.${encodeURIComponent(ipBot)}&ip=eq.${encodeURIComponent(ip)}`);
       return res.status(200).json({ ok: true });
